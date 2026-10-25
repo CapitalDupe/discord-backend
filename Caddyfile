@@ -1,0 +1,25 @@
+{
+	# Never bind port 80 (another app uses it): no HTTP->HTTPS redirect listener.
+	auto_https disable_redirects
+}
+
+{$DOMAIN} {
+	# Get the certificate over port 443 (TLS-ALPN) instead of port 80.
+	tls {
+		issuer acme {
+			disable_http_challenge
+		}
+	}
+
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+
+	# REST (/api/*) and WebSocket (/ws) both go to the backend.
+	reverse_proxy backend:3000
+}
