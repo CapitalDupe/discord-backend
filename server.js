@@ -248,7 +248,7 @@ async function ensureOfficial() {
     await c.query("insert into roles(id,server_id,name,perms,position,is_default) values('official-everyone',$1,'@everyone',$2,0,true) on conflict (id) do nothing", [OFFICIAL_SRV, P.VIEW]);
     await c.query('insert into members(server_id,user_id) values($1,$2) on conflict do nothing', [OFFICIAL_SRV, OFFICIAL_ID]);
     await c.query("insert into channels(id,server_id,name,type) values($1,$3,'announcements','text'),($2,$3,'rules','text') on conflict (id) do nothing", [OFFICIAL_ANN, OFFICIAL_RULES, OFFICIAL_SRV]);
-    await c.query('insert into members(server_id,user_id) select $1,id from users where not is_official on conflict do nothing', [OFFICIAL_SRV]);
+    await c.query('insert into members(server_id,user_id) select $1::text,id from users where not is_official on conflict do nothing', [OFFICIAL_SRV]);
     const seed = [[OFFICIAL_RULES, 'official-m1', 'Welcome! Be kind, no spam, no harassment. Server owners and moderators can remove members who break these rules.'],
                   [OFFICIAL_ANN, 'official-m2', 'Official announcements appear here. Only the platform account can post in this server.']];
     for (const [ch, id, text] of seed) await c.query('insert into messages(id,channel_id,user_id,text) select $1::text,$2::text,$3::text,$4::text where not exists (select 1 from messages where channel_id=$2::text)', [id, ch, OFFICIAL_ID, text]);
