@@ -1,35 +1,45 @@
-# discord-backend (Phase 1: accounts + multi-user)
+# discord-backend (v3 rewrite, work in progress)
 
-Node + Postgres + WebSocket backend for [CapitalDupe/discord](https://github.com/CapitalDupe/discord).
+NestJS + Prisma + Socket.IO + Redis + LiveKit/coturn API for the original Discord-style platform in
+[CapitalDupe/discord](https://github.com/CapitalDupe/discord). Database: PostgreSQL (Neon supported: use the pooled URL
+for `DATABASE_URL` and the direct URL for `DIRECT_URL`).
 
-## What's in Phase 1
+## Status of this branch
 
-- Registration and login, passwords hashed with **Argon2id**; uniform login errors and a dummy hash check so unknown usernames aren't distinguishable by response or timing.
-- Opaque session tokens (256-bit random, only the SHA-256 is stored), 30-day expiry, max 20 per user, logout revokes.
-- Rate limits: logins per IP and per username, sign-ups and invite joins per IP (in memory, per instance). Client IPs are only read from `X-Forwarded-For` when `TRUST_PROXY=1`. IPs are not stored.
-- Optional `SIGNUP_CODE` gate on registration.
-- Normalized Postgres schema (`schema.sql`, applied on startup): users, sessions, servers, roles, members, member_roles, channels, messages, reactions, invites, all with foreign keys and indexes.
-- Servers with owner, `@everyone` role, extra roles with bit permissions, role hierarchy (you can't grant permissions you lack, or touch roles/members at or above your rank), kick/leave.
-- Invite links with expiry and use limits.
-- Realtime events are authorized per user and only delivered to members of the relevant server. Messages are stamped with the real author and time by the server.
+Done and committed:
 
-## API
+- Project config (NestJS, TypeScript, ESLint, Prettier, Jest).
+- `prisma/schema.prisma`: full normalized data model (users, sessions, devices, MFA, passkeys, servers, roles, channels,
+  overwrites, messages, attachments, reactions, threads/forum, DMs, read states, notifications, voice, moderation, appeals,
+  automod, hash-chained audit log, security events, IP restrictions, bots, webhooks, feature flags).
+- `docs/API.md`: the REST + Socket.IO contract every module follows.
+- Core services: validated env, Argon2id/AES-GCM crypto, JWT access tokens with session revocation, Redis-backed rate
+  limits, IP normalisation and trusted-proxy handling, tamper-evident audit chain, restricted security-event store,
+  global auth / site-role / step-up / rate-limit guards, CSRF middleware, error filter.
+- Permission engine (`src/permissions`) with channel overwrites, timeouts, lockdown, role hierarchy and escalation guards,
+  plus unit tests.
+- Realtime (`src/realtime`): authenticated Socket.IO gateway, per-channel authorised rooms, presence with privacy,
+  per-socket flood limits, Redis adapter.
+- Health and Prometheus metrics endpoints.
 
-`POST /api/register {username,password,code}` and `/api/login {username,password}` return `{token}`. Send `Authorization: Bearer <token>` on everything else; the WebSocket takes `?token=`.
+Not written yet (see `docs/API.md` for the planned routes): auth, users, community, messaging, storage, notifications,
+moderation, security, admin, bots, voice, mail modules; migrations; Docker Compose stack; CI; tests beyond the permission
+unit tests; the Next.js frontend. `src/app.module.ts` only registers the modules that exist.
 
-`GET /api/me`, `GET /api/state`, `POST /api/logout`, `POST /api/servers/:sid/invites`, `POST /api/invites/:code/join`, `POST /api/servers/:sid/roles {name,perms,position}`, `PUT /api/servers/:sid/members/:uid/roles {roleIds}`, `DELETE /api/servers/:sid/members/:uid`.
+Nothing in this branch has been compiled or run yet: the build sandbox could not reach the npm registry.
+Run `npm install && npx prisma generate && npm run typecheck && npm test` first and fix anything that surfaces.
 
-Permission bits: VIEW 1, SEND 2, MANAGE_MESSAGES 4, MANAGE_CHANNELS 8, MANAGE_SERVER 16, MANAGE_ROLES 32, INVITE 64, KICK 128, ADMIN 2^30. Default role: VIEW+SEND+INVITE.
+## Legacy
 
-## Deploy (free)
+`main` still contains the previous Node + ws backend (`server.js`, `schema.sql`, Caddy/Docker deploy files); those files are
+untouched on this branch and should be moved to `legacy/` or deleted when this branch is merged.
 
-1. Create a Postgres database at neon.tech and copy the connection string.
-2. Render: New → Blueprint → this repo. Paste the string into `DATABASE_URL`. Render generates `SIGNUP_CODE` (see its env vars page).
-3. Open `https://capitaldupe.github.io/discord/?backend=https://YOUR-SERVICE.onrender.com`, choose Create account, and enter the signup code.
-4. Use the 🔗 button to make an invite link for friends.
+## Local setup
 
-Run locally: `npm install && DATABASE_URL=postgres://... npm start`.
-
-## Not in Phase 1 yet
-
-Email verification, password reset, 2FA/passkeys, per-channel permission overrides, a role-management UI (roles are API-only), bans, audit logs, DMs, uploads, automated tests. The session token lives in browser localStorage because the site and API are on different domains; an XSS bug in the frontend would expose it. Messages are readable by the server operator (no end-to-end encryption).
+```bash
+cp .env.example .env   # fill in real values; never commit .env
+npm install
+npx prisma generate
+npx prisma migrate dev   # or `prisma db push` against a scratch database
+npm run start:dev
+```
