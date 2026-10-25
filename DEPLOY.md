@@ -42,3 +42,14 @@ git pull && docker compose up -d --build
 - **CORS / WebSocket 403:** `ALLOWED_ORIGIN` must be exactly `https://capitaldupe.github.io`.
 - **Neon connection errors:** keep `sslmode=require`; the free plan suspends idle compute, so the first request after a pause can take a moment.
 - **Rate limits / client IPs:** `TRUST_PROXY=1` is set in compose because exactly one proxy (Caddy) is in front.
+
+## Open sign-ups and the Official account
+- Sign-ups are open to anyone, from any region (there is no geo-blocking). Leave `SIGNUP_CODE` empty. Abuse limits stay on: 5 sign-ups/hour per IP and `MAX_SIGNUPS_PER_HOUR` overall.
+- A system account **Official** (username `official`, cannot be logged into, name is reserved) owns a read-only **Official** server (`#announcements`, `#rules`). Every account is auto-joined.
+- Post an announcement from the VPS:
+```bash
+curl -X POST https://pondered.duckdns.org/api/official/announce \
+  -H "X-Admin-Key: $ADMIN_KEY" -H "Content-Type: application/json" \
+  -d '{"text":"Hello everyone!"}'
+```
+Set `ADMIN_KEY` in `.env` first, then `docker compose up -d --force-recreate backend`.

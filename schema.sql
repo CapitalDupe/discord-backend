@@ -45,3 +45,5 @@ create table if not exists reactions(
 create table if not exists invites(
   code text primary key, server_id text not null references servers on delete cascade,
   created_by text references users on delete set null, expires_at timestamptz, max_uses int, uses int not null default 0);
+
+alter table users add column if not exists is_official boolean not null default false;

@@ -64,13 +64,13 @@ async function stateFor(u) {
   const chans = sids.length ? await q('select id,server_id,name,type from channels where server_id=any($1) order by pos', [sids]) : [];
   const cids = chans.map(c => c.id);
   const msgs = cids.length ? await q(`select * from (select m.id,m.channel_id,m.user_id,m.text,m.edited,floor(extract(epoch from m.ts)*1000)::float8 ts,
-      coalesce(u.display_name,'Deleted user') name,coalesce(u.color,'#949ba4') color,row_number() over(partition by m.channel_id order by m.ts desc,m.id) rn
+      coalesce(u.display_name,'Deleted user') name,coalesce(u.color,'#949ba4') color,coalesce(u.is_official,false) official,row_number() over(partition by m.channel_id order by m.ts desc,m.id) rn
       from messages m left join users u on u.id=m.user_id where m.channel_id=any($1)) x where rn<=50 order by ts,id`, [cids]) : [];
   const rx = msgs.length ? await q('select message_id,emoji,array_agg(user_id) users from reactions where message_id=any($1) group by 1,2', [msgs.map(m => m.id)]) : [];
-  const members = sids.length ? await q('select distinct u.id,u.display_name as name,u.color from members m join users u on u.id=m.user_id where m.server_id=any($1) and u.id<>$2', [sids, u.id]) : [];
+  const members = sids.length ? await q('select distinct u.id,u.display_name as name,u.color,u.is_official as official from members m join users u on u.id=m.user_id where m.server_id=any($1) and u.id<>$2', [sids, u.id]) : [];
   const byMsg = {}; for (const r of rx) (byMsg[r.message_id] ??= {})[r.emoji] = r.users;
   const messages = {};
-  for (const m of msgs) (messages[m.channel_id] ??= []).push({ id: m.id, uid: m.user_id, name: m.name, color: m.color, ts: m.ts, text: m.text, ...(m.edited ? { edited: 1 } : {}), ...(byMsg[m.id] ? { r: byMsg[m.id] } : {}) });
+  for (const m of msgs) (messages[m.channel_id] ??= []).push({ id: m.id, uid: m.user_id, name: m.name, color: m.color, ts: m.ts, text: m.text, ...(m.official ? { official: 1 } : {}), ...(m.edited ? { edited: 1 } : {}), ...(byMsg[m.id] ? { r: byMsg[m.id] } : {}) });
   return { user: pub(u), members, messages, servers: servers.map(s => ({ ...s, channels: chans.filter(c => c.server_id === s.id).map(({ id, name, type }) => ({ id, name, type })) })) };
 }
 
@@ -148,16 +148,19 @@ async function route(req, res, p) {
 
   if (m === 'POST' && p === '/register') {
     if (!limit('reg:' + addr, 5, 36e5)) fail(429, 'Too many sign-ups, try later');
+    if (!limit('reg:all', +E.MAX_SIGNUPS_PER_HOUR || 200, 36e5)) fail(429, 'Sign-ups are very busy, try again later');
     const b = await readBody(req);
     if (SIGNUP_CODE && !eq(b.code, SIGNUP_CODE)) fail(403, 'Invalid signup code');
     const username = str(b.username, 32).trim(), pw = typeof b.password === 'string' ? b.password : '';
     if (!/^[a-zA-Z0-9_.-]{3,32}$/.test(username)) fail(400, 'Username: 3-32 letters, numbers, _ . -');
     if (pw.length < 10 || pw.length > 128) fail(400, 'Password must be 10-128 characters');
+    if (RESERVED.test(username) || /official/i.test(username)) fail(400, 'That username is reserved');
     const hash = await argon2.hash(pw, { type: argon2.argon2id }), id = rid();
     try {
       await tx(async c => {
         await c.query('insert into users(id,username,display_name,pass_hash) values($1,$2,$2,$3)', [id, username, hash]);
         await makeServer(c, id, { id: rid(), name: 'Home', channels: [{ id: rid(), name: 'general', type: 'text' }, { id: rid(), name: 'random', type: 'text' }] });
+        await c.query('insert into members(server_id,user_id) values($1,$2) on conflict do nothing', [OFFICIAL_SRV, id]);
       });
     } catch (e) { if (e.code === '23505') fail(409, 'Username already taken'); throw e; }
     return json(res, 201, { token: await newSession(id, req.headers['user-agent']) });
@@ -169,6 +172,15 @@ async function route(req, res, p) {
     const ok = await argon2.verify(u ? u.pass_hash : await DUMMY, typeof b.password === 'string' ? b.password : '').catch(() => false);
     if (!u || !ok) fail(401, 'Wrong username or password');
     return json(res, 200, { token: await newSession(u.id, req.headers['user-agent']) });
+  }
+
+  if (m === 'POST' && p === '/official/announce') {   // post as the Official account; needs ADMIN_KEY
+    if (!E.ADMIN_KEY || !eq(req.headers['x-admin-key'], E.ADMIN_KEY)) fail(404, 'Not found');
+    if (!limit('announce:' + addr, 10, 36e5)) fail(429, 'Too many requests');
+    const b = await readBody(req), text = str(b.text, 4000).trim(); if (!text) fail(400, 'Text required');
+    const id = rid(), r = await one('insert into messages(id,channel_id,user_id,text) values($1,$2,$3,$4) returning floor(extract(epoch from ts)*1000)::float8 as ts', [id, OFFICIAL_ANN, OFFICIAL_ID, text]);
+    await toServer(OFFICIAL_SRV, { t: 'msg.new', cid: OFFICIAL_ANN, m: { id, uid: OFFICIAL_ID, name: 'Official', color: '#5865f2', ts: r.ts, text, official: 1 } });
+    return json(res, 201, { id });
   }
 
   const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, ''), u = await userFor(token);
@@ -224,6 +236,25 @@ async function route(req, res, p) {
   fail(404, 'Not found');
 }
 
+// ---------- official platform account ----------
+// A system user nobody can log in as (pass_hash is not a valid hash), reserved username, and a read-only
+// "Official" server that every account is auto-joined to. Announce via POST /api/official/announce (ADMIN_KEY).
+const OFFICIAL_ID = 'official', OFFICIAL_SRV = 'official-hq', OFFICIAL_ANN = 'official-news', OFFICIAL_RULES = 'official-rules';
+const RESERVED = /^(official|admin|administrator|system|staff|support|moderator|mod|everyone|here|discord|root|owner)$/i;
+async function ensureOfficial() {
+  await tx(async c => {
+    await c.query("insert into users(id,username,display_name,color,pass_hash,is_official) values($1,'official','Official','#5865f2','!',true) on conflict (id) do nothing", [OFFICIAL_ID]);
+    await c.query("insert into servers(id,name,owner_id) values($1,'Official',$2) on conflict (id) do nothing", [OFFICIAL_SRV, OFFICIAL_ID]);
+    await c.query("insert into roles(id,server_id,name,perms,position,is_default) values('official-everyone',$1,'@everyone',$2,0,true) on conflict (id) do nothing", [OFFICIAL_SRV, P.VIEW]);
+    await c.query('insert into members(server_id,user_id) values($1,$2) on conflict do nothing', [OFFICIAL_SRV, OFFICIAL_ID]);
+    await c.query("insert into channels(id,server_id,name,type) values($1,$3,'announcements','text'),($2,$3,'rules','text') on conflict (id) do nothing", [OFFICIAL_ANN, OFFICIAL_RULES, OFFICIAL_SRV]);
+    await c.query('insert into members(server_id,user_id) select $1,id from users where not is_official on conflict do nothing', [OFFICIAL_SRV]);
+    const seed = [[OFFICIAL_RULES, 'official-m1', 'Welcome! Be kind, no spam, no harassment. Server owners and moderators can remove members who break these rules.'],
+                  [OFFICIAL_ANN, 'official-m2', 'Official announcements appear here. Only the platform account can post in this server.']];
+    for (const [ch, id, text] of seed) await c.query('insert into messages(id,channel_id,user_id,text) select $1::text,$2::text,$3::text,$4::text where not exists (select 1 from messages where channel_id=$2::text)', [id, ch, OFFICIAL_ID, text]);
+  });
+}
+
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', ORIGIN); res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type'); res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -262,5 +293,6 @@ process.on('unhandledRejection', e => console.error(e));
 
 (async () => {
   await pool.query(fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8'));
+  await ensureOfficial();
   server.listen(PORT, () => console.log('Listening on :' + PORT));
 })().catch(e => { console.error(e); process.exit(1); });
