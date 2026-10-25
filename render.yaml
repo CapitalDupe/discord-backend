@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: discord-backend
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: ACCESS_TOKEN
+        generateValue: true
+      - key: ALLOWED_ORIGIN
+        value: https://capitaldupe.github.io
+      - key: DATABASE_URL
+        sync: false
