@@ -7,9 +7,11 @@ services:
     startCommand: npm start
     healthCheckPath: /healthz
     envVars:
-      - key: ACCESS_TOKEN
+      - key: DATABASE_URL
+        sync: false
+      - key: SIGNUP_CODE
         generateValue: true
       - key: ALLOWED_ORIGIN
         value: https://capitaldupe.github.io
-      - key: DATABASE_URL
-        sync: false
+      - key: TRUST_PROXY
+        value: "1"

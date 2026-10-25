@@ -1,47 +1,35 @@
-# discord-backend
+# discord-backend (Phase 1: accounts + multi-user)
 
-REST + WebSocket backend for [CapitalDupe/discord](https://github.com/CapitalDupe/discord). One Node file (`server.js`), two dependencies.
+Node + Postgres + WebSocket backend for [CapitalDupe/discord](https://github.com/CapitalDupe/discord).
 
-- `GET /api/state`: full state (needs `Authorization: Bearer <ACCESS_TOKEN>`)
-- `wss://host/ws?token=<ACCESS_TOKEN>`: realtime events (`msg.new`, `msg.edit`, `msg.del`, `msg.react`, `srv.new/del`, `ch.new/del`, `user.set`)
-- `GET /healthz`
+## What's in Phase 1
 
-The server validates every event, stamps messages with the server user and time, saves them, and broadcasts to your other devices.
+- Registration and login, passwords hashed with **Argon2id**; uniform login errors and a dummy hash check so unknown usernames aren't distinguishable by response or timing.
+- Opaque session tokens (256-bit random, only the SHA-256 is stored), 30-day expiry, max 20 per user, logout revokes.
+- Rate limits: logins per IP and per username, sign-ups and invite joins per IP (in memory, per instance). Client IPs are only read from `X-Forwarded-For` when `TRUST_PROXY=1`. IPs are not stored.
+- Optional `SIGNUP_CODE` gate on registration.
+- Normalized Postgres schema (`schema.sql`, applied on startup): users, sessions, servers, roles, members, member_roles, channels, messages, reactions, invites, all with foreign keys and indexes.
+- Servers with owner, `@everyone` role, extra roles with bit permissions, role hierarchy (you can't grant permissions you lack, or touch roles/members at or above your rank), kick/leave.
+- Invite links with expiry and use limits.
+- Realtime events are authorized per user and only delivered to members of the relevant server. Messages are stamped with the real author and time by the server.
 
-## Deploy free on Render
+## API
 
-1. Create a free Postgres database at [neon.tech](https://neon.tech) and copy its connection string. Free hosts wipe local files on restart, so without this your messages will vanish.
-2. On [render.com](https://render.com): **New → Blueprint**, pick this repo. It reads `render.yaml` and generates an `ACCESS_TOKEN` for you.
-3. Paste the Postgres string into the `DATABASE_URL` env var.
-4. After it deploys, copy the service URL (e.g. `https://discord-backend-xxxx.onrender.com`) and the `ACCESS_TOKEN` from the Render dashboard.
-5. Open your frontend once with:
+`POST /api/register {username,password,code}` and `/api/login {username,password}` return `{token}`. Send `Authorization: Bearer <token>` on everything else; the WebSocket takes `?token=`.
 
-```
-https://capitaldupe.github.io/discord/?backend=https://YOUR-SERVICE.onrender.com&token=YOUR_ACCESS_TOKEN
-```
+`GET /api/me`, `GET /api/state`, `POST /api/logout`, `POST /api/servers/:sid/invites`, `POST /api/invites/:code/join`, `POST /api/servers/:sid/roles {name,perms,position}`, `PUT /api/servers/:sid/members/:uid/roles {roleIds}`, `DELETE /api/servers/:sid/members/:uid`.
 
-The frontend saves both in that browser and removes them from the address bar. Repeat on each device. Use `?backend=local` to switch back to browser-only mode.
+Permission bits: VIEW 1, SEND 2, MANAGE_MESSAGES 4, MANAGE_CHANNELS 8, MANAGE_SERVER 16, MANAGE_ROLES 32, INVITE 64, KICK 128, ADMIN 2^30. Default role: VIEW+SEND+INVITE.
 
-Render's free tier sleeps after ~15 min idle, so the first load afterwards takes about a minute.
+## Deploy (free)
 
-## Run locally
+1. Create a Postgres database at neon.tech and copy the connection string.
+2. Render: New → Blueprint → this repo. Paste the string into `DATABASE_URL`. Render generates `SIGNUP_CODE` (see its env vars page).
+3. Open `https://capitaldupe.github.io/discord/?backend=https://YOUR-SERVICE.onrender.com`, choose Create account, and enter the signup code.
+4. Use the 🔗 button to make an invite link for friends.
 
-```bash
-npm install
-ACCESS_TOKEN=secret npm start   # data saved in ./data/state.json
-```
+Run locally: `npm install && DATABASE_URL=postgres://... npm start`.
 
-Then open the frontend with `?backend=http://localhost:3000&token=secret`. Browsers allow an https page to call `localhost`, but not other http hosts.
+## Not in Phase 1 yet
 
-## Environment variables
-
-| name | purpose |
-|---|---|
-| `ACCESS_TOKEN` | shared secret; unset = open to anyone |
-| `ALLOWED_ORIGIN` | the frontend origin (CORS and WebSocket check); default `*` |
-| `DATABASE_URL` | Postgres for persistence; otherwise a JSON file in `DATA_DIR` |
-| `PORT` | default 3000 |
-
-## Limits
-
-There are no accounts by design: anyone holding the token acts as the same single user ("You"), so this syncs your own devices rather than hosting a multi-person server. Voice channels are UI only.
+Email verification, password reset, 2FA/passkeys, per-channel permission overrides, a role-management UI (roles are API-only), bans, audit logs, DMs, uploads, automated tests. The session token lives in browser localStorage because the site and API are on different domains; an XSS bug in the frontend would expose it. Messages are readable by the server operator (no end-to-end encryption).
