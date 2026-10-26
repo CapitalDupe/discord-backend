@@ -53,3 +53,10 @@ curl -X POST https://pondered.duckdns.org/api/official/announce \
   -d '{"text":"Hello everyone!"}'
 ```
 Set `ADMIN_KEY` in `.env` first, then `docker compose up -d --force-recreate backend`.
+
+## Phase 2 (DMs, friends, avatars, uploads)
+- New tables are created automatically on start (`src/db/schema.sql` is idempotent): `dm_members`, `friends`, `uploads`, plus new columns on `users` and `messages`.
+- Uploaded files live in the `uploads` Docker volume (`UPLOAD_DIR=/data/uploads`). Back it up with the database; deleting the volume deletes every avatar and attachment.
+- Limits: `MAX_UPLOAD_MB` (default 8) per file, `USER_QUOTA_MB` (default 200) per user. Only real images are shown inline; every other file downloads. Caddy rejects bodies over 12 MB.
+- Presence (online/idle) and typing live in memory in the single backend container; they reset on restart.
+- Every account joins the read-only Official server. It does not count as a "shared server" for DMs and does not list other users.
