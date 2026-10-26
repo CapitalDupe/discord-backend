@@ -8,7 +8,8 @@ const handlers = Object.assign(
   require('./handlers/message'),
   require('./handlers/server'),
   require('./handlers/channel'),
-  require('./handlers/user')
+  require('./handlers/user'),
+  require('./handlers/activity')
 );
 
 // Returns the handler result (see handlers/message.js) or null for unknown/invalid events.

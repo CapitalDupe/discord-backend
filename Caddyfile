@@ -13,6 +13,11 @@
 
 	encode zstd gzip
 
+	# Uploads are capped at 8 MB by the backend; refuse anything much bigger early.
+	request_body {
+		max_size 12MB
+	}
+
 	header {
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options nosniff

@@ -63,7 +63,7 @@ async function joinWithInvite(ctx, code) {
     sendToServerMembers(invite.server_id, {
       t: 'member.new',
       sid: invite.server_id,
-      user: { id: user.id, name: user.display_name, color: user.color },
+      user: { id: user.id, name: user.display_name, color: user.color, username: user.username, avatar: user.avatar || null },
     }).catch(err => log.error('member.new broadcast failed', err));
   }
   sendJson(res, 200, { ok: true });

@@ -89,3 +89,41 @@ create table if not exists invites (
 
 -- Added after the first release, so it is an ALTER rather than part of CREATE TABLE.
 alter table users add column if not exists is_official boolean not null default false;
+
+-- Phase 2: avatars, replies, attachments, direct messages, friends, uploads.
+alter table users add column if not exists avatar text;
+
+-- Direct messages are channels with no server and type 'dm'.
+alter table channels alter column server_id drop not null;
+alter table channels drop constraint if exists channels_type_check;
+alter table channels add constraint channels_type_check check (type in ('text','voice','dm'));
+
+alter table messages add column if not exists reply_to text references messages(id) on delete set null;
+alter table messages add column if not exists att jsonb;
+
+create table if not exists dm_members (
+  channel_id  text not null references channels on delete cascade,
+  user_id     text not null references users on delete cascade,
+  primary key (channel_id, user_id)
+);
+create index if not exists dm_members_user on dm_members (user_id);
+
+-- One row per friendship: a = who asked, b = who was asked.
+create table if not exists friends (
+  a           text not null references users on delete cascade,
+  b           text not null references users on delete cascade,
+  status      text not null check (status in ('pending','accepted')),
+  created_at  timestamptz not null default now(),
+  primary key (a, b)
+);
+create index if not exists friends_b on friends (b);
+
+create table if not exists uploads (
+  id          text primary key,
+  user_id     text not null references users on delete cascade,
+  name        text not null,
+  mime        text not null,
+  size        int not null,
+  created_at  timestamptz not null default now()
+);
+create index if not exists uploads_user on uploads (user_id);

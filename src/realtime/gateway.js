@@ -57,7 +57,9 @@ async function onMessage(ws, raw) {
   try {
     const result = await handleEvent(ws.user, event);
     if (result && result !== 'ok') {
-      await connections.sendToServerMembers(result.sid, result.ev, ws); // the sender already applied it locally
+      // The sender already applied it locally, so skip their own socket.
+      if (result.users) connections.sendToUsers(result.users, result.ev, ws);
+      else await connections.sendToServerMembers(result.sid, result.ev, ws);
     }
     if (!result) {
       log.debug('websocket event rejected: ' + (event && event.t) + ' from user ' + ws.user.id);

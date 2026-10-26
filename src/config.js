@@ -4,6 +4,8 @@
 // object instead of touching process.env, so there is exactly one place to look
 // when a setting seems to be ignored.
 
+const path = require('path');
+
 const env = process.env;
 
 const config = {
@@ -29,6 +31,11 @@ const config = {
 
   // Set DB_SSL_STRICT=1 to verify the database TLS certificate.
   dbSslStrict: /^(1|true|yes)$/i.test(env.DB_SSL_STRICT || ''),
+
+  // Uploaded files (avatars and attachments) are stored on disk here. Mount a volume on it in Docker.
+  uploadDir: env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads'),
+  maxUploadBytes: (Number(env.MAX_UPLOAD_MB) || 8) * 1024 * 1024,
+  userQuotaBytes: (Number(env.USER_QUOTA_MB) || 200) * 1024 * 1024,
 
   // error | warn | info | debug
   logLevel: (env.LOG_LEVEL || 'info').toLowerCase(),

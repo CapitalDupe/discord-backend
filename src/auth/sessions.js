@@ -28,7 +28,7 @@ async function createSession(userId, userAgent) {
 async function findUserByToken(token) {
   if (!token) return null;
   const user = await queryOne(
-    'select u.id,u.username,u.display_name,u.color from sessions s join users u on u.id=s.user_id where s.id=$1 and s.expires_at>now()',
+    'select u.id,u.username,u.display_name,u.color,u.avatar from sessions s join users u on u.id=s.user_id where s.id=$1 and s.expires_at>now()',
     [sha256(token)]
   );
   return user || null;

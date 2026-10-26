@@ -32,6 +32,7 @@ const publicUser = user => ({
   name: user.display_name,
   color: user.color,
   username: user.username,
+  avatar: user.avatar || null,
 });
 
 module.exports = { newId, sha256, clip, isId, safeEqual, fail, publicUser };

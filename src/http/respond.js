@@ -37,4 +37,20 @@ function readJsonBody(req) {
   });
 }
 
-module.exports = { sendJson, readJsonBody };
+// Reads the request body as raw bytes (file uploads). Anything over maxBytes is
+// discarded as it arrives and the request is rejected with 413 once it ends.
+function readRawBody(req, maxBytes) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let bytes = 0;
+    req.on('data', chunk => {
+      bytes += chunk.length;
+      if (bytes <= maxBytes) chunks.push(chunk);
+      else if (bytes > maxBytes * 3) req.destroy(); // refuse to keep reading a runaway upload
+    });
+    req.on('end', () => (bytes > maxBytes ? reject(Object.assign(new Error('File too large'), { status: 413 })) : resolve(Buffer.concat(chunks))));
+    req.on('error', reject);
+  });
+}
+
+module.exports = { sendJson, readJsonBody, readRawBody };
