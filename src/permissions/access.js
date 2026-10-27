@@ -3,7 +3,7 @@
 // Authorization helpers. Every action that touches a server or channel calls
 // into this file; the client is never trusted to say what it may do.
 
-const { queryOne } = require('../db/pool');
+const { query, queryOne } = require('../db/pool');
 const { fail, isId } = require('../lib/util');
 const { P, ALL } = require('./bits');
 
@@ -40,9 +40,19 @@ function need(access, bit) {
 
 // Same as getAccess, but starting from a channel id.
 //   -> { serverId, access }   both null if the channel id is invalid or unknown
+// Direct-message channels have no server: the result is { serverId: null, users, access }
+// where `users` are the two participants (events go to them, not to a server) and
+// `access` is null unless the caller is one of them.
 async function getChannelContext(userId, channelId) {
-  const channel = isId(channelId) && (await queryOne('select server_id from channels where id=$1', [channelId]));
+  const channel = isId(channelId) && (await queryOne('select server_id,type from channels where id=$1', [channelId]));
   if (!channel) return { serverId: null, access: null };
+
+  if (channel.type === 'dm') {
+    const rows = await query('select user_id from dm_members where channel_id=$1', [channelId]);
+    const users = rows.map(row => row.user_id);
+    if (!users.includes(userId)) return { serverId: null, access: null };
+    return { serverId: null, users, access: { perms: P.VIEW | P.SEND, top: 0, owner: false } };
+  }
   return { serverId: channel.server_id, access: await getAccess(userId, channel.server_id) };
 }
 

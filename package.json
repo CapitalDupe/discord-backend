@@ -1,12 +1,15 @@
 {
   "name": "discord-backend",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "description": "Discord-style community platform API (plain Node: http + ws + pg). The NestJS rewrite lives in package.nest.json.",
   "license": "MIT",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "test": "node --test"
   },
   "dependencies": {
     "argon2": "^0.41.0",

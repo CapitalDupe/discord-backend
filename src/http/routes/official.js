@@ -31,7 +31,7 @@ module.exports = async function officialRoutes(ctx) {
   await sendToServerMembers(OFFICIAL_SRV, {
     t: 'msg.new',
     cid: OFFICIAL_ANN,
-    m: { id, uid: OFFICIAL_ID, name: 'Official', color: '#5865f2', ts: row.ts, text, official: 1 },
+    m: { id, uid: OFFICIAL_ID, un: 'official', name: 'Official', color: '#5865f2', ts: row.ts, text, official: 1 },
   });
 
   sendJson(res, 201, { id });

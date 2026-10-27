@@ -18,6 +18,7 @@ const PUBLIC_ROUTES = [
   require('./routes/health'),
   require('./routes/auth'),
   require('./routes/official'),
+  require('./routes/files'),
 ];
 
 // Login required (Authorization: Bearer <token>).
@@ -26,6 +27,9 @@ const PRIVATE_ROUTES = [
   require('./routes/invites'),
   require('./routes/roles'),
   require('./routes/members'),
+  require('./routes/friends'),
+  require('./routes/dms'),
+  require('./routes/uploads'),
 ];
 
 async function route(req, res, path) {
